@@ -1,0 +1,43 @@
+# This script is created to install multiple fonts to All users in the PC
+
+$NetworkFontPath = "\\Server\Share\Fonts\" # Replace this with the path to your network share containing the font files
+
+# Function to install a font
+function Install-Font {
+    param (
+        [string]$FontFilePath
+    )
+    try {
+        # Load the Win32 API AddFontResource to install the font
+        $signature = @"
+        [DllImport("gdi32.dll", SetLastError = true)]
+        public static extern int AddFontResource(string lpszFilename);
+"@
+        $AddFontResource = Add-Type -MemberDefinition $signature -Name "Win32AddFontResource" -Namespace Win32Functions -PassThru
+
+        # Install the font using AddFontResource
+        $result = $AddFontResource::AddFontResource($FontFilePath)
+        if ($result -eq 0) {
+            throw "Failed to install font."
+        }
+        
+        # Trigger a broadcast to inform other applications of the font change
+        $hwnd = (New-Object -ComObject shell.application).windows() | ? { $_.FullName -eq $FontFilePath } | select -First 1
+        if ($hwnd) {
+            $null = $hwnd.refresh2(3)
+        }
+
+        Write-Host "Font installed: $($FontFilePath)"
+    }
+    catch {
+        Write-Host "Error installing font: $($FontFilePath) - $_" -ForegroundColor Red
+    }
+}
+
+# Get all font files with .otf extension from the network share
+$fontFiles = Get-ChildItem -Path $NetworkFontPath -Filter "*.otf" -File -Recurse
+
+# Loop through each font file and install it
+foreach ($fontFile in $fontFiles) {
+    Install-Font -FontFilePath $fontFile.FullName
+}
